@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard QCD - Dassault Systèmes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --ds-blue: #005386;
+            --ds-green: #6EBE44;
+        }
+        
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        
+        .ds-card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            padding: 1.5rem;
+            margin: 1rem;
+            height: calc(100vh - 140px);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .vertical-progress {
+            width: 140px;
+            height: 500px;
+            position: relative;
+            background: #f3f4f6;
+            border-radius: 12px;
+            margin: 0 auto;
+            margin-bottom: 100px;
+            overflow: visible;
+        }
+        
+        .indicators-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            padding: 1rem;
+        }
+        
+        .vertical-fill {
+            position: absolute;
+            width: 100%;
+            border-radius: 12px;
+            transition: height 0.6s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 1.2rem;
+            bottom: 0;
+        }
+        
+        .target-line {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background-color: #ef4444;
+            left: 0;
+            z-index: 2;
+        }
+        
+        .target-label {
+            position: absolute;
+            color: #ef4444;
+            font-size: 1rem;
+            font-weight: bold;
+            white-space: nowrap;
+            left: calc(100% + 10px);
+            transform: translateY(-50%);
+        }
+        
+        .tooltip {
+            visibility: hidden;
+            position: fixed;
+            z-index: 9999;
+            background-color: #1a1a1a;
+            color: white;
+            text-align: center;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            pointer-events: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .lever-button {
+            position: relative;
+        }
+        
+        .lever-button:hover .tooltip {
+            visibility: visible;
+        }
+        
+        .improvement-badge {
+            background: #f8fafc;
+            border: 2px solid;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+        
+        .improvement-badge.positive {
+            border-color: var(--ds-green);
+            color: var(--ds-green);
+        }
+        
+        .improvement-badge.negative {
+            border-color: var(--ds-blue);
+            color: var(--ds-blue);
+        }
+        
+        .indicator-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 1.5rem;
+            color: #374151;
+        }
+        
+        .base-value {
+            font-size: 1.1rem;
+            margin-top: 1rem;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--ds-blue);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <div class="min-h-screen bg-gray-50">
+        <div class="bg-[#005386] text-white p-6">
+            <h1 class="text-3xl font-bold">QCD Dashboard - Dassault Systèmes</h1>
+            <p class="text-lg opacity-80 mt-2">Quality, Capacity & Delivery Monitoring</p>
+        </div>
+
+        <div class="container mx-auto p-4">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div class="ds-card lg:col-span-3">
+                    <h2 class="text-2xl font-bold mb-4 text-[#005386]">QCD Performance Indicators</h2>
+                    <div class="indicators-container" id="indicators"></div>
+                </div>
+
+                <div class="ds-card lg:col-span-1">
+                    <h2 class="text-2xl font-bold mb-4 text-[#005386]">Improvement Levers</h2>
+                    <div class="space-y-2 overflow-auto flex-grow" id="levers"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration de Supabase
+        const supabaseUrl = 'https://kikivfglslrobwttvlvn.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtpa2l2Zmdsc2xyb2J3dHR2bHZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1MTIwNDQsImV4cCI6MjA1MDA4ODA0NH0.Njo06GXSyZHjpjRwPJ2zpElJ88VYgqN2YYDfTJnBQ6k';
+        
+        // Initialisation du client Supabase
+        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+        // Initialisation du dashboard une fois le DOM chargé
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("[WebView] DOM loaded, initializing dashboard with Supabase");
+            window.initializeDashboard(supabase);
+        });
+    </script>
+    <script src="dashboard.js"></script>
+</body>
+</html>
